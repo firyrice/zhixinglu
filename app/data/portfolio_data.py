@@ -7,6 +7,9 @@ import requests
 _spot_cache = {"data": None, "ts": 0}
 _SPOT_TTL = 60
 
+_hk_spot_cache = {"data": None, "ts": 0}
+_HK_SPOT_TTL = 60
+
 _individual_cache = {}
 _INDIVIDUAL_TTL = 300
 
@@ -42,6 +45,21 @@ def _get_spot_data() -> pd.DataFrame:
     except Exception:
         if _spot_cache["data"] is not None:
             return _spot_cache["data"]
+        return pd.DataFrame()
+
+
+def _get_hk_spot_data() -> pd.DataFrame:
+    now = time.time()
+    if _hk_spot_cache["data"] is not None and (now - _hk_spot_cache["ts"]) < _HK_SPOT_TTL:
+        return _hk_spot_cache["data"]
+    try:
+        df = _retry(ak.stock_hk_spot_em)
+        _hk_spot_cache["data"] = df
+        _hk_spot_cache["ts"] = now
+        return df
+    except Exception:
+        if _hk_spot_cache["data"] is not None:
+            return _hk_spot_cache["data"]
         return pd.DataFrame()
 
 
@@ -94,6 +112,53 @@ def _get_tencent_quotes(symbols: list[str]) -> dict:
     return result
 
 
+def _get_tencent_hk_quotes(symbols: list[str]) -> dict:
+    """通过腾讯财经 API 批量获取港股行情。"""
+    now = time.time()
+    uncached, result = [], {}
+    for s in symbols:
+        cache_key = "hk_" + s
+        if cache_key in _tencent_cache and (now - _tencent_cache[cache_key]["ts"]) < _TENCENT_TTL:
+            result[s] = _tencent_cache[cache_key]["data"]
+        else:
+            uncached.append(s)
+    if not uncached:
+        return result
+
+    codes = ["hk" + s for s in uncached]
+    try:
+        resp = requests.get(
+            "https://qt.gtimg.cn/q=" + ",".join(codes),
+            timeout=10,
+        )
+        resp.encoding = "gbk"
+        for line in resp.text.strip().split(";"):
+            m = re.search(r'v_(hk\d{5})="(.+)"', line)
+            if not m:
+                continue
+            code = m.group(1)[2:]
+            f = m.group(2).split("~")
+            if len(f) < 50:
+                continue
+            price = float(f[3] or 0)
+            prev_close = float(f[4] or 0)
+            data = {
+                "name": f[1],
+                "price": price,
+                "prev_close": prev_close,
+                "change_pct": float(f[32] or 0),
+                "total_mv": float(f[44] or 0) * 1e8,
+                "pe_ttm": float(f[39] or 0),
+                "dividend_yield": 0,
+            }
+            cache_key = "hk_" + code
+            _tencent_cache[cache_key] = {"data": data, "ts": now}
+            result[code] = data
+    except Exception:
+        pass
+    return result
+
+
 def _get_individual_info(symbol: str) -> dict:
     """通过东方财富获取单股详情（含行业分类）。"""
     now = time.time()
@@ -117,8 +182,11 @@ def _get_individual_info(symbol: str) -> dict:
             return _individual_cache[symbol]["data"]
         return {}
 
-def get_batch_quotes(symbols: list[str]) -> dict:
-    """批量获取实时行情。优先东方财富，备选腾讯财经。"""
+def get_batch_quotes(symbols: list[str], market: str = "A") -> dict:
+    """批量获取实时行情。A股优先东方财富备选腾讯；港股用腾讯+东方财富。"""
+    if market == "HK":
+        return _get_hk_batch_quotes(symbols)
+
     df = _get_spot_data()
     result = {}
     missing = []
@@ -146,8 +214,46 @@ def get_batch_quotes(symbols: list[str]) -> dict:
     return result
 
 
-def get_stock_profiles(symbols: list[str]) -> dict:
+def _get_hk_batch_quotes(symbols: list[str]) -> dict:
+    """港股批量行情：优先东方财富 spot，备选腾讯财经。"""
+    df = _get_hk_spot_data()
+    result = {}
+    missing = []
+
+    for symbol in symbols:
+        if not df.empty:
+            row = df[df["代码"] == symbol]
+            if not row.empty:
+                r = row.iloc[0]
+                result[symbol] = {
+                    "name": str(r.get("名称", "")),
+                    "price": float(r.get("最新价", 0) or 0),
+                    "prev_close": float(r.get("昨收", 0) or 0),
+                    "change_pct": float(r.get("涨跌幅", 0) or 0),
+                    "total_mv": 0,
+                    "pe_ttm": 0,
+                    "dividend_yield": 0,
+                }
+                continue
+        missing.append(symbol)
+
+    tencent = _get_tencent_hk_quotes(symbols)
+    for symbol in symbols:
+        if symbol in tencent:
+            tq = tencent[symbol]
+            if symbol in result:
+                result[symbol]["total_mv"] = tq.get("total_mv", 0)
+                result[symbol]["pe_ttm"] = tq.get("pe_ttm", 0)
+            else:
+                result[symbol] = tq
+    return result
+
+
+def get_stock_profiles(symbols: list[str], market: str = "A") -> dict:
     """获取股票元信息：行业、总市值、市值分类、PE、股息率。"""
+    if market == "HK":
+        return _get_hk_stock_profiles(symbols)
+
     df = _get_spot_data()
     tencent = _get_tencent_quotes(symbols)
     result = {}
@@ -197,5 +303,53 @@ def get_stock_profiles(symbols: list[str]) -> dict:
             "dividend_yield": dividend_yield,
         }
         _profile_cache[symbol] = {"data": data, "ts": time.time()}
+        result[symbol] = data
+    return result
+
+
+def _classify_cap(total_mv_hkd: float) -> str:
+    """港股市值分类（单位：港元）。"""
+    mv_billion_hkd = total_mv_hkd / 1e8
+    if mv_billion_hkd >= 1000:
+        return "大盘股"
+    elif mv_billion_hkd >= 200:
+        return "中盘股"
+    return "小盘股"
+
+
+def _get_hk_stock_profiles(symbols: list[str]) -> dict:
+    """港股元信息：从腾讯财经获取市值、PE，行业标记为'港股'。"""
+    tencent = _get_tencent_hk_quotes(symbols)
+    df = _get_hk_spot_data()
+    result = {}
+
+    for symbol in symbols:
+        cache_key = "hk_" + symbol
+        if cache_key in _profile_cache and (time.time() - _profile_cache[cache_key]["ts"]) < _PROFILE_TTL:
+            result[symbol] = _profile_cache[cache_key]["data"]
+            continue
+
+        tq = tencent.get(symbol, {})
+        name = tq.get("name", "")
+        total_mv = tq.get("total_mv", 0)
+        pe_ttm = tq.get("pe_ttm", 0)
+
+        if not name and not df.empty:
+            row = df[df["代码"] == symbol]
+            if not row.empty:
+                name = str(row.iloc[0].get("名称", ""))
+
+        if not name and not total_mv:
+            continue
+
+        data = {
+            "name": name,
+            "industry": "港股",
+            "total_mv": total_mv,
+            "cap_type": _classify_cap(total_mv),
+            "pe_ttm": pe_ttm,
+            "dividend_yield": 0,
+        }
+        _profile_cache[cache_key] = {"data": data, "ts": time.time()}
         result[symbol] = data
     return result

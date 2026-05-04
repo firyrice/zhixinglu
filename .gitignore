@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 .claude/
+PRD/
+.superpowers/
+app/data/history.db

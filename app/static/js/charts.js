@@ -12,9 +12,19 @@ const Charts = {
 
     // 每次切换到穿透 tab 都重新加载 profiles，避免缓存导致看不到数据
     try {
-      const symbols = held.map(s => s.code).join(',');
-      const resp = await fetch('/api/stock-profiles?symbols=' + symbols);
-      this.profiles = await resp.json();
+      const byMarket = {};
+      held.forEach(s => {
+        const m = s.market || 'A';
+        if (!byMarket[m]) byMarket[m] = [];
+        byMarket[m].push(s.code);
+      });
+      const fetches = Object.entries(byMarket).map(([market, symbols]) => {
+        const mp = market === 'HK' ? '&market=HK' : '';
+        return fetch('/api/stock-profiles?symbols=' + symbols.join(',') + mp).then(r => r.json());
+      });
+      const results = await Promise.all(fetches);
+      this.profiles = {};
+      results.forEach(r => Object.assign(this.profiles, r));
     } catch {
       container.innerHTML = '<div class="charts-container"><p class="text-secondary text-sm" style="text-align:center;">穿透数据加载失败，请稍后刷新</p></div>';
       return;

@@ -1,4 +1,6 @@
 const STORAGE_KEY = 'zhixinglu_portfolio';
+const QUOTE_CACHE_KEY = 'zhixinglu_quote_cache';
+const QUOTE_CACHE_TTL = 60 * 60 * 1000;
 
 const Store = {
   _data: null,
@@ -30,7 +32,7 @@ const Store = {
     return this._load().stocks[code] || null;
   },
 
-  addStock({ code, name, shares, cost_price, buy_date, note }) {
+  addStock({ code, name, shares, cost_price, buy_date, note, market }) {
     const data = this._load();
     const existing = data.stocks[code];
     if (existing && existing.shares > 0 && shares > 0) {
@@ -45,6 +47,7 @@ const Store = {
         cost_price: cost_price || 0,
         buy_date: buy_date || new Date().toISOString().slice(0, 10),
         note: note || '',
+        market: market || 'A',
         added_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -85,5 +88,33 @@ const Store = {
 
   getWatchedStocks() {
     return this.getStockList().filter(s => s.shares === 0);
+  },
+
+  getSymbolsByMarket() {
+    const groups = {};
+    this.getStockList().forEach(s => {
+      const m = s.market || 'A';
+      if (!groups[m]) groups[m] = [];
+      groups[m].push(s.code);
+    });
+    return groups;
+  },
+
+  getQuoteCache() {
+    try {
+      const raw = localStorage.getItem(QUOTE_CACHE_KEY);
+      if (!raw) return null;
+      const cache = JSON.parse(raw);
+      if (Date.now() - cache.ts > QUOTE_CACHE_TTL) return null;
+      return cache;
+    } catch { return null; }
+  },
+
+  setQuoteCache(quotes, profiles) {
+    localStorage.setItem(QUOTE_CACHE_KEY, JSON.stringify({ quotes, profiles, ts: Date.now() }));
+  },
+
+  clearQuoteCache() {
+    localStorage.removeItem(QUOTE_CACHE_KEY);
   }
 };

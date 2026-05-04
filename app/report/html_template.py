@@ -50,6 +50,46 @@ body {{
   padding: 60px 0 40px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 48px;
+  position: relative;
+}}
+
+.download-btn {{
+  position: absolute;
+  top: 20px;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, border-color 0.2s, box-shadow 0.2s;
+}}
+
+.download-btn.visible {{
+  opacity: 1;
+  pointer-events: auto;
+}}
+
+.download-btn:hover {{
+  border-color: var(--accent-gold);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}}
+
+.download-btn svg {{
+  width: 18px;
+  height: 18px;
+  stroke: var(--text-secondary);
+  transition: stroke 0.2s;
+}}
+
+.download-btn:hover svg {{
+  stroke: var(--accent-gold);
 }}
 
 .report-header h1 {{
@@ -390,6 +430,16 @@ body {{
   color: var(--accent-green);
 }}
 
+.md-content a {{
+  color: var(--accent-gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}}
+
+.md-content a:hover {{
+  color: var(--accent-green);
+}}
+
 .md-content table {{
   width: 100%;
   border-collapse: collapse;
@@ -498,6 +548,8 @@ body {{
           bar.style.width='100%';
           txt.textContent='分析完成';
           setTimeout(function(){{wrap.classList.add('done')}},600);
+          var dlBtn=document.getElementById('download-btn');
+          if(dlBtn)dlBtn.classList.add('visible');
         }}
       }});
     }});
@@ -507,6 +559,13 @@ body {{
 </script>
 <div class="report-container">
 <header class="report-header">
+  <button class="download-btn" id="download-btn" title="下载报告" onclick="(function(btn){{btn.style.display='none';var html='<!DOCTYPE html>\\n'+document.documentElement.outerHTML;btn.style.display='';var title=document.title||'report';var fn=title.replace(/\\s*[\\|\\-].*$/,'').replace(/[\\(\\)]/g,'_').trim()+'_'+new Date().toISOString().slice(0,10)+'.html';var b=new Blob([html],{{type:'text/html;charset=utf-8'}});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=fn;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}})(this)">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+  </button>
   <h1>{stock_name}</h1>
   <div class="stock-code">{stock_code}</div>
   <div class="report-date">REPORT_DATE_PLACEHOLDER</div>
@@ -553,7 +612,13 @@ def report_html_footer() -> str:
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof marked === 'undefined') return;
-  marked.setOptions({ breaks: true, gfm: true });
+  var renderer = new marked.Renderer();
+  renderer.link = function(href, title, text) {
+    if (typeof href === 'object') { text = href.text; title = href.title; href = href.href; }
+    var t = title ? ' title="' + title + '"' : '';
+    return '<a href="' + href + '" target="_blank" rel="noopener"' + t + '>' + text + '</a>';
+  };
+  marked.setOptions({ breaks: true, gfm: true, renderer: renderer });
   document.querySelectorAll('.md-text').forEach(function(el) {
     el.innerHTML = marked.parse(el.textContent);
   });

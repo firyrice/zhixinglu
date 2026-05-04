@@ -83,16 +83,17 @@ const AddStock = {
       const data = await resp.json();
       if (!data.length) { results.innerHTML = '<p class="text-secondary text-sm" style="padding:12px;">未找到匹配的股票</p>'; return; }
       results.innerHTML = data.map(s => `
-        <div class="search-result-item" data-code="${s.code}" data-name="${s.name}">
+        <div class="search-result-item" data-code="${s.code}" data-name="${s.name}" data-market="${s.market || 'A'}">
           <span style="font-weight:500;">${s.name}</span>
-          <span class="mono text-secondary" style="font-size:13px;">${s.code}</span>
+          <span class="mono text-secondary" style="font-size:13px;">${s.code}${s.market === 'HK' ? ' · 港股' : ''}</span>
         </div>`).join('');
       results.querySelectorAll('.search-result-item').forEach(item => {
         item.onclick = () => {
           const code = item.dataset.code;
           const name = item.dataset.name;
+          const market = item.dataset.market || 'A';
           overlay.querySelector('#add-step-search').style.display = 'none';
-          this._renderForm(overlay, { code, name, shares: 0, cost_price: 0, buy_date: new Date().toISOString().slice(0,10), note: '' }, 'add');
+          this._renderForm(overlay, { code, name, shares: 0, cost_price: 0, buy_date: new Date().toISOString().slice(0,10), note: '', market }, 'add');
         };
       });
     } catch { results.innerHTML = '<p class="text-secondary text-sm" style="padding:12px;">搜索出错，请重试</p>'; }
@@ -147,7 +148,7 @@ const AddStock = {
       }
 
       if (mode === 'add') {
-        Store.addStock({ code: stock.code, name: stock.name, shares, cost_price: cost, buy_date: date, note });
+        Store.addStock({ code: stock.code, name: stock.name, shares, cost_price: cost, buy_date: date, note, market: stock.market || 'A' });
       } else {
         Store.updateStock(stock.code, { shares, cost_price: cost, buy_date: date, note });
       }
@@ -158,7 +159,8 @@ const AddStock = {
             <p class="text-secondary text-sm">正在获取最新行情，计算盈亏...</p>
           </div>`;
         try {
-          const resp = await fetch('/api/quotes?symbols=' + stock.code);
+          const marketParam = (stock.market === 'HK') ? '&market=HK' : '';
+          const resp = await fetch('/api/quotes?symbols=' + stock.code + marketParam);
           const quotes = await resp.json();
           const q = quotes[stock.code];
           if (q && q.price > 0) {

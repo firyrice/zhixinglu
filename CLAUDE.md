@@ -4,68 +4,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-知行录 (zhixinglu) — AI-powered single-stock deep analysis report generator for retail investors. A FastAPI web app that fetches Chinese A-share market data via akshare, runs it through 10 sequential LLM analysis modules, and streams the resulting HTML report to the browser.
+知行录 (zhixinglu) — AI-powered Chinese A-share stock analysis and portfolio tracking tool for retail investors. A FastAPI web app that fetches market data via akshare, runs it through LLM analysis modules, and streams HTML reports to the browser. Also provides a client-side portfolio tracker with VLM-powered screenshot import.
 
 ## Commands
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run dev server (http://0.0.0.0:5001, hot reload)
-python3 run.py
+pip install -r requirements.txt    # Install dependencies
+python3 run.py                     # Dev server at http://0.0.0.0:5001 (hot reload)
 ```
 
 No test framework or linter is configured.
 
 ## Environment
 
-Requires a `.env` file with:
-- `LLM_BASE_URL` — OpenAI-compatible API endpoint
-- `LLM_API_KEY` — API key
-- `LLM_MODEL` — model name (default: `claude-4.6-sonnet`)
+Requires a `.env` file (see `.env.example`):
 
-Config is loaded in `app/config.py` via python-dotenv.
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `LLM_BASE_URL` | OpenAI-compatible API endpoint for report generation | `https://api.openai.com/v1` |
+| `LLM_API_KEY` | API key for LLM | (required) |
+| `LLM_MODEL` | Model name | `claude-4.6-sonnet` |
+| `VLM_BASE_URL` | Vision model endpoint for screenshot parsing | falls back to `LLM_BASE_URL` |
+| `VLM_API_KEY` | API key for VLM | falls back to `LLM_API_KEY` |
+| `VLM_MODEL` | Vision model name | `gemini-3.1-pro` |
+
+Config loaded in `app/config.py` via python-dotenv. Both LLM and VLM use the OpenAI SDK.
 
 ## Architecture
 
 **Entry point**: `run.py` → `app/main.py` (FastAPI + uvicorn)
 
-**API endpoints**:
-- `GET /api/search?q=` — stock symbol/name search
-- `GET /api/report/{symbol}` — streams HTML report via `StreamingResponse`
+### Two features, different data strategies
 
-**Data flow**: User searches stock → selects one → server fetches 11 data sources concurrently via `asyncio.to_thread()` (akshare is sync) → 10 report modules run sequentially, each calling the LLM → HTML chunks streamed to client for progressive rendering.
+1. **Stock analysis reports** — server-side. Data fetched from akshare, processed through LLM, streamed as HTML. Reports saved to SQLite (`app/data/history.db`) via `app/models/history.py`.
+2. **Portfolio tracking** — client-side. Holdings stored in `localStorage` (via `store.js`). Server only provides real-time quotes and stock profiles; no server-side portfolio state.
 
-**Three layers**:
+### API endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/search?q=` | Stock symbol/name search |
+| `GET` | `/api/report/{symbol}` | Stream HTML report (also saves to history DB) |
+| `GET` | `/api/quotes?symbols=` | Batch real-time quotes (comma-separated codes) |
+| `GET` | `/api/stock-profiles?symbols=` | Stock metadata: industry, cap size, PE, dividend yield |
+| `POST` | `/api/parse-screenshot` | Upload broker screenshot → VLM extracts holdings |
+| `GET` | `/api/history` | List saved reports |
+| `GET/DELETE` | `/api/history/{id}` | Get/delete a saved report |
+
+### Backend layers
 
 | Layer | Path | Role |
 |-------|------|------|
-| Data | `app/data/` | Fetches financial statements, K-line, valuations, news, research reports from akshare. `market_data.py` caches K-line in memory. |
-| AI | `app/ai/` | `llm_client.py` wraps OpenAI SDK for the configured endpoint. `prompts.py` holds 10 Chinese system prompts (one per module). `dcf_model.py` runs a two-stage DCF valuation (weighted FCF, net debt adjustment). |
-| Report | `app/report/` | `generator.py` orchestrates the 10 modules and yields HTML. `html_template.py` provides CSS/HTML structure. `chart_config.py` generates ECharts configs. |
+| Data | `app/data/` | akshare wrappers. `portfolio_data.py` has dual-source quotes (东方财富 primary, 腾讯财经 fallback) with in-memory TTL caches. `market_data.py` caches K-line data. |
+| AI | `app/ai/` | `llm_client.py` wraps OpenAI SDK (chat, chat_with_search, chat_stream). `vision_client.py` wraps VLM for screenshot parsing. `prompts.py` has 10 Chinese system prompts. `dcf_model.py` for two-stage DCF. `valuation_models.py` runs 5 classic methods via the `valueinvest` library. |
+| Report | `app/report/` | `generator.py` orchestrates 10 modules as an async generator yielding HTML chunks. `html_template.py` for CSS/HTML. `chart_config.py` for ECharts configs. |
+| Models | `app/models/` | `history.py` — SQLite CRUD for analysis report history. DB auto-initialized on app startup via lifespan handler. |
 
-**10 report modules** (in `generator.py`): company overview → business model → financial health + DCF → valuation percentiles → analyst forecasts → market divergence → price trend + technicals → financial reports index → trading reference → key reflection questions.
+### Frontend (SPA)
 
-**Frontend**: `app/static/index.html` — vanilla HTML/JS with ECharts. The DCF section includes client-side JS for interactive parameter adjustment (WACC, growth rates).
+`app/static/index.html` — vanilla HTML/JS, no build step.
+
+| File | Role |
+|------|------|
+| `js/router.js` | Hash-based router (`#/`, `#/portfolio`) |
+| `js/store.js` | Portfolio state in `localStorage` with quote caching (1hr TTL) |
+| `js/portfolio.js` | Portfolio dashboard: holdings table, P&L, sector/cap/valuation pie charts |
+| `js/add-stock.js` | Add stock dialog with search |
+| `js/import-screenshot.js` | Screenshot upload → VLM parse → batch import |
+| `js/charts.js` | ECharts rendering for report charts |
 
 ## Key Patterns
 
 - All akshare calls are blocking and wrapped in `asyncio.to_thread()`.
-- LLM calls go through `app/ai/llm_client.py` which uses the OpenAI SDK pointed at the configured base URL.
-- Report generation is a single async generator; each module appends HTML and yields it as a chunk.
-- No database — all data is fetched on-demand per request.
-- Prompts are in Chinese and written for a retail investor audience ("人话版").
+- LLM/VLM calls use the OpenAI SDK pointed at configured base URLs. `chat_with_search` tries web search tool first, falls back to plain chat.
+- Report generation is a single async generator; each of 10 modules yields an HTML chunk for progressive rendering.
+- Portfolio data uses a dual-source strategy: 东方财富 `stock_zh_a_spot_em` for batch quotes, 腾讯财经 HTTP API as fallback. Both have in-memory TTL caches.
+- `valuation_models.py` bridges akshare data formats to the `valueinvest` library's `SimpleNamespace`-based API.
+- Prompts are in Chinese, written for retail investors ("人话版").
 
 ## Product Documents
 
-PRD and design specs live in `PRD/`:
-- `知行录_产品需求文档_v1.0.md` — full PRD (master document)
-- `功能1_单股深度分析.md` through `功能6_个人投资Agent.md` — individual feature specs
-- `设计规范_UI_UX.md` — UI/UX design system (colors, typography, interaction principles, cross-platform strategy for Web + mobile)
+PRD and design specs in `PRD/`:
+- `知行录_产品需求文档_v1.0.md` — master PRD
+- `功能1_单股深度分析.md` through `功能6_个人投资Agent.md` — feature specs
+- `设计规范_UI_UX.md` — UI/UX design system
+
+## Data Sources
+
+Stock data is fetched via [akshare](https://github.com/akfamily/akshare):
+- Documentation: https://akshare.akfamily.xyz/data/stock/stock.html
 
 请用中文来和我交互，包括回答问题，提问问题等
-
-需要获取股票相关的数据时通过开源项目akshare获取：
-- 项目地址：https://github.com/akfamily/akshare
-- 股票数据说明文档：https://akshare.akfamily.xyz/data/stock/stock.html

@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/css/portfolio.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
 <div id="app"></div>
@@ -18,6 +19,8 @@
 <script src="/static/js/import-screenshot.js"></script>
 <script src="/static/js/portfolio.js"></script>
 <script src="/static/js/charts.js"></script>
+<script src="/static/js/letter.js"></script>
+<script src="/static/js/mailbox.js"></script>
 <script>
 function renderHome() {
   const app = document.getElementById('app');
@@ -48,18 +51,38 @@ function renderHome() {
   app.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:0 24px;">
       <div style="text-align:center;max-width:600px;width:100%;">
-        <h1 class="serif" style="font-size:36px;color:var(--accent-green);margin-bottom:12px;">知行录</h1>
+        <div style="position:relative;display:inline-block;">
+          <h1 class="serif" style="font-size:36px;color:var(--accent-green);margin-bottom:12px;">知行录</h1>
+          <button onclick="Router.navigate('/history')" title="历史分析" style="position:absolute;top:4px;right:-44px;width:36px;height:36px;border:1px solid var(--border);border-radius:50%;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color 0.2s,box-shadow 0.2s;" onmouseover="this.style.borderColor='var(--accent-gold)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'" onmouseout="this.style.borderColor='var(--border)';this.style.boxShadow=''">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B6B6B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </button>
+        </div>
         <p class="text-secondary" style="font-size:15px;margin-bottom:48px;line-height:1.6;">记录投资的知与行</p>
         <div class="search-box" style="position:relative;width:100%;margin-bottom:16px;">
-          <input type="text" id="search-input" placeholder="输入一个股票代码，看看不一样的分析" autocomplete="off"
+          <input type="text" id="search-input" placeholder="输入股票代码或名称（支持A股/港股）" autocomplete="off"
             style="width:100%;padding:16px 20px;font-size:16px;font-family:'Noto Sans SC',sans-serif;border:2px solid var(--border);border-radius:12px;background:#fff;color:var(--text-primary);outline:none;transition:border-color 0.2s;">
           <div id="suggestions" style="position:absolute;top:100%;left:0;right:0;background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;display:none;"></div>
         </div>
-        <p class="text-secondary" style="font-size:13px;">支持6位股票代码（如600519）或股票名称（如贵州茅台）</p>
+        <p class="text-secondary" style="font-size:13px;">支持A股代码（如600519）、港股代码（如00700）或股票名称</p>
         <div id="loading" style="display:none;margin-top:32px;">
           <p class="text-secondary" style="font-size:14px;margin-bottom:12px;">AI正在认真分析，大约需要20-30秒</p>
           <div style="width:200px;height:3px;background:var(--border);border-radius:2px;margin:0 auto;overflow:hidden;">
             <div style="width:30%;height:100%;background:var(--accent-gold);border-radius:2px;animation:progress 2s ease-in-out infinite;"></div>
+          </div>
+        </div>
+        <div id="home-letter-section" style="width:100%;margin:24px 0 16px;">
+          <div id="letter-card-container" style="text-align:left;">
+            <div style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;">
+              <div style="font-size:36px;margin-bottom:8px;opacity:0.3;">✉</div>
+              <div style="font-size:15px;color:var(--accent-green);font-weight:bold;margin-bottom:4px;">还没有今日来信</div>
+              <div class="text-secondary text-sm" style="margin-bottom:16px;">收盘后点击生成，巴菲特会为你写一封专属分析</div>
+              <button onclick="Router.navigate('/letter/generate')"
+                style="background:var(--accent-green);color:var(--bg-primary,#FAF7F2);padding:10px 24px;border-radius:8px;font-size:14px;font-weight:bold;border:none;cursor:pointer;"
+                id="generate-letter-btn">生成今日来信</button>
+              <div style="margin-top:12px;">
+                <span style="font-size:12px;color:var(--accent-gold);cursor:pointer;" onclick="Router.navigate('/mailbox')">查看历史来信 →</span>
+              </div>
+            </div>
           </div>
         </div>
         ${entryCard}
@@ -92,6 +115,7 @@ function renderHome() {
   });
 
   if (hasStocks) loadHomeSummary();
+  loadHomeLetterStatus();
 }
 
 async function fetchHomeSuggestions(q) {
@@ -99,11 +123,12 @@ async function fetchHomeSuggestions(q) {
   const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
   const data = await resp.json();
   if (!data.length) { suggestions.style.display = 'none'; return; }
-  suggestions.innerHTML = data.map(s =>
-    `<div style="padding:12px 20px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;" onmouseover="this.style.background='#F5F0E8'" onmouseout="this.style.background=''" onclick="startAnalysis('${s.code}')">
-      <span style="font-weight:500;">${s.name}</span><span class="mono text-secondary" style="font-size:13px;">${s.code}</span>
-    </div>`
-  ).join('');
+  suggestions.innerHTML = data.map(s => {
+    const tag = s.market === 'HK' ? '<span style="font-size:11px;background:var(--accent-gold);color:#fff;padding:1px 5px;border-radius:3px;margin-left:6px;">港</span>' : '';
+    return `<div style="padding:12px 20px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s;" onmouseover="this.style.background='#F5F0E8'" onmouseout="this.style.background=''" onclick="startAnalysis('${s.code}')">
+      <span style="font-weight:500;">${s.name}${tag}</span><span class="mono text-secondary" style="font-size:13px;">${s.code}</span>
+    </div>`;
+  }).join('');
   suggestions.style.display = 'block';
 }
 
@@ -144,8 +169,97 @@ async function loadHomeSummary() {
   } catch { el.innerHTML = '<span class="text-secondary text-sm">行情加载失败</span>'; }
 }
 
+async function renderHistory() {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div style="max-width:600px;margin:0 auto;padding:40px 24px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:32px;">
+        <button onclick="Router.navigate('/')" style="border:none;background:none;cursor:pointer;padding:4px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B6B6B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <h1 class="serif" style="font-size:24px;color:var(--accent-green);margin:0;">历史分析</h1>
+      </div>
+      <div id="history-list"><p class="text-secondary text-sm">加载中...</p></div>
+    </div>`;
+  try {
+    const resp = await fetch('/api/history');
+    const data = await resp.json();
+    const list = document.getElementById('history-list');
+    if (!data.length) {
+      list.innerHTML = '<p class="text-secondary" style="text-align:center;margin-top:60px;">暂无历史分析记录</p>';
+      return;
+    }
+    list.innerHTML = data.map(item => {
+      const marketTag = item.market === 'HK' ? '<span style="font-size:11px;background:var(--accent-gold);color:#fff;padding:1px 5px;border-radius:3px;margin-left:6px;">港</span>' : '';
+      return `<div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);border-radius:10px;background:#fff;transition:box-shadow 0.2s;" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'" onmouseout="this.style.boxShadow=''">
+        <div onclick="window.open('/api/history/${item.id}','_blank')" style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-weight:500;">${item.stock_name}</span>
+            <span class="mono text-secondary" style="font-size:13px;">${item.stock_code}</span>
+            ${marketTag}
+          </div>
+          <div class="text-secondary text-sm" style="margin-top:4px;">${item.analysis_date}</div>
+        </div>
+        <button onclick="event.stopPropagation();deleteHistory(${item.id})" title="删除" style="border:none;background:none;cursor:pointer;padding:6px;opacity:0.4;transition:opacity 0.2s;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.4'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97757" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>`;
+    }).join('');
+  } catch { document.getElementById('history-list').innerHTML = '<p class="text-secondary">加载失败</p>'; }
+}
+
+async function deleteHistory(id) {
+  if (!confirm('确定删除这条分析记录？')) return;
+  await fetch('/api/history/' + id, { method: 'DELETE' });
+  renderHistory();
+}
+
+async function loadHomeLetterStatus() {
+  const container = document.getElementById('letter-card-container');
+  if (!container) return;
+  try {
+    const resp = await fetch('/api/letter/latest');
+    const letter = await resp.json();
+    if (!letter) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const isToday = letter.date === today;
+    const isUnread = !letter.is_read;
+
+    if (isToday && isUnread) {
+      const retPct = letter.daily_return != null ? (letter.daily_return >= 0 ? '+' : '') + letter.daily_return.toFixed(2) + '%' : '';
+      container.innerHTML = `
+        <div style="background:linear-gradient(135deg,#2C3E2D 0%,#3a5240 100%);border-radius:12px;padding:24px;color:#FAF7F2;position:relative;overflow:hidden;cursor:pointer;text-align:left;"
+          onclick="Router.navigate('/letter/${letter.id}')">
+          <div style="position:absolute;right:-20px;top:-20px;font-size:120px;opacity:0.06;">✉</div>
+          <div style="font-size:12px;color:#C9A961;letter-spacing:2px;margin-bottom:8px;">巴菲特来信 · 今日</div>
+          <div class="serif" style="font-size:18px;font-weight:bold;margin-bottom:8px;">致我的合伙人</div>
+          <div style="font-size:14px;opacity:0.8;margin-bottom:16px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
+            ${letter.summary || ''}
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;gap:12px;font-size:13px;opacity:0.7;">
+              <span>${letter.date}</span><span>·</span><span>${letter.stock_count || 0}只持仓股</span>
+            </div>
+            <div style="background:#C9A961;color:#2C3E2D;padding:6px 16px;border-radius:6px;font-size:13px;font-weight:bold;">阅读来信 →</div>
+          </div>
+        </div>`;
+    } else if (isToday) {
+      const btn = document.getElementById('generate-letter-btn');
+      if (btn) btn.textContent = '重新生成今日来信';
+    }
+  } catch { /* keep empty state */ }
+}
+
 Router.register('/', renderHome);
 Router.register('/portfolio', () => Portfolio.render());
+Router.register('/history', renderHistory);
+Router.register('/letter', () => {
+  const hash = window.location.hash;
+  const id = hash.replace('#/letter/', '');
+  Letter.render(id);
+});
+Router.register('/mailbox', () => Mailbox.render());
 Router.start();
 </script>
 </body>

@@ -40,13 +40,14 @@ async def generate_report(symbol: str) -> AsyncGenerator[str, None]:
     stock = results[0]
     stock_code = stock["code"]
     stock_name = stock["name"]
+    market = stock.get("market", "A")
 
     head = report_html_head(stock_name, stock_code)
     head = head.replace("REPORT_DATE_PLACEHOLDER",
                         f"分析日期：{datetime.now().strftime('%Y年%m月%d日')}")
     yield head
 
-    data = await _fetch_all_data(stock_code)
+    data = await _fetch_all_data(stock_code, market)
 
     yield await _generate_module1(stock_name, data)
     yield await _generate_module2(stock_name, data)
@@ -64,20 +65,20 @@ async def generate_report(symbol: str) -> AsyncGenerator[str, None]:
     yield report_html_footer()
 
 
-async def _fetch_all_data(symbol: str) -> dict:
+async def _fetch_all_data(symbol: str, market: str = "A") -> dict:
     tasks = {
-        "info": asyncio.to_thread(get_stock_info, symbol),
-        "financial_summary": asyncio.to_thread(get_financial_summary, symbol),
-        "profit": asyncio.to_thread(get_profit_sheet, symbol),
-        "cashflow": asyncio.to_thread(get_cash_flow_sheet, symbol),
-        "kline_90d": asyncio.to_thread(get_stock_kline, symbol, 90),
-        "valuation": asyncio.to_thread(get_valuation_history, symbol),
-        "news": asyncio.to_thread(get_stock_news, symbol),
-        "reports": asyncio.to_thread(get_research_reports, symbol),
-        "announcements": asyncio.to_thread(get_stock_announcements, symbol),
-        "quote": asyncio.to_thread(get_realtime_quote, symbol),
-        "profit_forecast": asyncio.to_thread(get_profit_forecast, symbol),
-        "dividend_yield": asyncio.to_thread(get_dividend_yield, symbol),
+        "info": asyncio.to_thread(get_stock_info, symbol, market),
+        "financial_summary": asyncio.to_thread(get_financial_summary, symbol, market),
+        "profit": asyncio.to_thread(get_profit_sheet, symbol, market),
+        "cashflow": asyncio.to_thread(get_cash_flow_sheet, symbol, market),
+        "kline_90d": asyncio.to_thread(get_stock_kline, symbol, 90, market),
+        "valuation": asyncio.to_thread(get_valuation_history, symbol, market),
+        "news": asyncio.to_thread(get_stock_news, symbol, market),
+        "reports": asyncio.to_thread(get_research_reports, symbol, market),
+        "announcements": asyncio.to_thread(get_stock_announcements, symbol, market),
+        "quote": asyncio.to_thread(get_realtime_quote, symbol, market),
+        "profit_forecast": asyncio.to_thread(get_profit_forecast, symbol, market),
+        "dividend_yield": asyncio.to_thread(get_dividend_yield, symbol, market),
     }
 
     data = {}
@@ -85,6 +86,7 @@ async def _fetch_all_data(symbol: str) -> dict:
     for key, result in zip(tasks.keys(), results):
         data[key] = None if isinstance(result, Exception) else result
     data["_symbol"] = symbol
+    data["_market"] = market
     return data
 
 
@@ -253,15 +255,27 @@ def _build_dcf_section(data: dict, quote: dict) -> str:
         pass
 
     total_shares = 0
-    try:
-        import akshare as ak
-        mv_df = ak.stock_zh_valuation_baidu(symbol=data.get("_symbol", ""), indicator="总市值", period="近一年")
-        if mv_df is not None and not mv_df.empty:
-            total_mv = float(mv_df.iloc[-1]["value"]) * 1e8
-            if current_price > 0 and total_mv > 0:
-                total_shares = total_mv / current_price
-    except Exception:
-        pass
+    market = data.get("_market", "A")
+    if market == "HK":
+        try:
+            from app.data.financial_data import _yf_info_safe
+            info = _yf_info_safe(data.get("_symbol", ""))
+            total_shares = info.get("sharesOutstanding", 0) or 0
+            net_debt_val = (info.get("totalDebt", 0) or 0) - (info.get("totalCash", 0) or 0)
+            if net_debt_val > 0:
+                net_debt = net_debt_val
+        except Exception:
+            pass
+    else:
+        try:
+            import akshare as ak
+            mv_df = ak.stock_zh_valuation_baidu(symbol=data.get("_symbol", ""), indicator="总市值", period="近一年")
+            if mv_df is not None and not mv_df.empty:
+                total_mv = float(mv_df.iloc[-1]["value"]) * 1e8
+                if current_price > 0 and total_mv > 0:
+                    total_shares = total_mv / current_price
+        except Exception:
+            pass
 
     if current_price <= 0 or total_shares <= 0:
         return '<div class="disclaimer">DCF估值：缺少股价或股本数据，无法计算。</div>'
@@ -578,6 +592,7 @@ async def _generate_module4(stock_name: str, data: dict) -> str:
 
 async def _generate_module5_research(stock_name: str, data: dict) -> str:
     reports = data.get("reports")
+    market = data.get("_market", "A")
 
     rows = []
     if reports is not None and not reports.empty:
@@ -604,9 +619,18 @@ async def _generate_module5_research(stock_name: str, data: dict) -> str:
   <p class="data-label">机构：{org}{f" · 评级：{rating}" if rating and rating != "nan" else ""}{link_html}</p>
   <div class="insight">{summary}</div>
 </div>''')
+    elif market == "HK":
+        try:
+            prompt = f"请搜索{stock_name}最近3个月的券商研报或分析师报告，列出最新的3篇研报，每篇包含：标题、发布机构、日期、核心观点（1-2句话）。如果找不到具体研报，请基于公开信息总结近期主要券商对该股的看法。用中文回答。"
+            text = await asyncio.to_thread(chat_with_search, prompt)
+            rows.append(f'<div class="indicator-card"><div class="insight">{text}</div></div>')
+        except Exception:
+            pass
 
     forecast_html = await _build_forecast_section(stock_name, data)
     content = "\n".join(rows) + forecast_html
+    if not rows and not forecast_html:
+        content = "<p>暂无研报数据。</p>"
     return module_html(5, content)
 
 

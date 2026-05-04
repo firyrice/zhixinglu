@@ -203,6 +203,7 @@ const ImportScreenshot = {
         cost_price: s.cost_price || 0,
         buy_date: new Date().toISOString().slice(0, 10),
         note: '截图导入',
+        market: s.market || 'A',
       };
       if (existingStocks[s.code]) {
         Store.updateStock(s.code, data);

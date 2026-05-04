@@ -12,7 +12,17 @@ const Portfolio = {
       return;
     }
     app.innerHTML = this._shell();
-    await this.refreshQuotes();
+    const cache = Store.getQuoteCache();
+    if (cache) {
+      this.quotes = cache.quotes;
+      this.profiles = cache.profiles;
+      this.lastUpdate = new Date(cache.ts);
+      this._renderSummary();
+      this._renderTabContent();
+      this._renderFooter();
+    } else {
+      await this.refreshQuotes();
+    }
     this._startAutoRefresh();
   },
 
@@ -25,7 +35,7 @@ const Portfolio = {
         <div class="actions">
           <button class="btn btn-sm btn-secondary" onclick="ImportScreenshot.showImport()" title="截图导入">&#128247; 导入</button>
           <button class="btn btn-sm btn-gold" onclick="AddStock.showAdd()">+ 添加</button>
-          <button class="btn btn-sm btn-secondary" onclick="Portfolio.refreshQuotes()" title="刷新行情">&#8635;</button>
+          <button class="btn btn-sm btn-secondary" onclick="Portfolio.refreshQuotes(true)" title="刷新行情">&#8635;</button>
         </div>
       </div>
       <div class="summary-card card" id="summary-card" style="position:relative;margin:16px;">
@@ -62,18 +72,39 @@ const Portfolio = {
     this._renderTabContent();
   },
 
-  async refreshQuotes() {
+  async refreshQuotes(force) {
+    if (!force) {
+      const cache = Store.getQuoteCache();
+      if (cache) {
+        this.quotes = cache.quotes;
+        this.profiles = cache.profiles;
+        this.lastUpdate = new Date(cache.ts);
+        this._renderSummary();
+        this._renderTabContent();
+        this._renderFooter();
+        return;
+      }
+    }
     const allStocks = Store.getStockList();
     if (!allStocks.length) return;
-    const symbols = allStocks.map(s => s.code).join(',');
+    const byMarket = Store.getSymbolsByMarket();
     try {
-      const [quotesResp, profilesResp] = await Promise.all([
-        fetch('/api/quotes?symbols=' + symbols),
-        fetch('/api/stock-profiles?symbols=' + symbols)
-      ]);
-      this.quotes = await quotesResp.json();
-      this.profiles = await profilesResp.json();
+      const fetches = [];
+      for (const [market, symbols] of Object.entries(byMarket)) {
+        const sym = symbols.join(',');
+        const mp = market === 'HK' ? '&market=HK' : '';
+        fetches.push(fetch('/api/quotes?symbols=' + sym + mp).then(r => r.json()));
+        fetches.push(fetch('/api/stock-profiles?symbols=' + sym + mp).then(r => r.json()));
+      }
+      const results = await Promise.all(fetches);
+      this.quotes = {};
+      this.profiles = {};
+      for (let i = 0; i < results.length; i += 2) {
+        Object.assign(this.quotes, results[i]);
+        Object.assign(this.profiles, results[i + 1]);
+      }
       this.lastUpdate = new Date();
+      Store.setQuoteCache(this.quotes, this.profiles);
       this._renderSummary();
       this._renderTabContent();
       this._renderFooter();
@@ -235,7 +266,7 @@ const Portfolio = {
     const h = now.getHours(), m = now.getMinutes();
     const isTrading = day >= 1 && day <= 5 && ((h === 9 && m >= 30) || (h > 9 && h < 15));
     if (isTrading) {
-      this.refreshTimer = setInterval(() => this.refreshQuotes(), 5 * 60 * 1000);
+      this.refreshTimer = setInterval(() => this.refreshQuotes(true), 5 * 60 * 1000);
     }
   },
 
@@ -243,7 +274,9 @@ const Portfolio = {
     const el = document.getElementById('footer-note');
     if (!el) return;
     const timeStr = this.lastUpdate ? this.lastUpdate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-    el.innerHTML = `最后更新：${timeStr}<br>持仓数据由用户手动录入，仅供个人记录和参考。价格数据来自公开市场，可能存在延迟。本功能不构成任何投资建议。`;
+    const cache = Store.getQuoteCache();
+    const cacheHint = cache ? '（已缓存，点击 ↻ 手动刷新）' : '';
+    el.innerHTML = `最后更新：${timeStr}${cacheHint}<br>持仓数据由用户手动录入，仅供个人记录和参考。价格数据来自公开市场，可能存在延迟。本功能不构成任何投资建议。`;
   },
 
   _fmt(n) { return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
