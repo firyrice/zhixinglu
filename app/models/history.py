@@ -65,3 +65,13 @@ def delete_report(report_id: int) -> bool:
     deleted = cursor.rowcount > 0
     conn.close()
     return deleted
+
+
+def get_recent_report(stock_code: str, days: int = 2) -> dict | None:
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM analysis_history WHERE stock_code = ? AND created_at > datetime('now', ? || ' days') ORDER BY created_at DESC LIMIT 1",
+        (stock_code, f"-{days}"),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
