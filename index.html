@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知行录 - AI驱动的投资思考伙伴</title>
+  <meta name="description" content="知行录是一款AI驱动的A股分析工具，提供个股深度分析、持仓追踪、交易诊断，做你的投资思考伙伴。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="nav" id="nav">
+    <div class="nav__container">
+      <a href="#" class="nav__brand">知行录</a>
+      <div class="nav__links">
+        <a href="#features">功能</a>
+        <a href="#quickstart">使用指南</a>
+        <a href="https://github.com/firyrice/zhixinglu" target="_blank" rel="noopener">GitHub</a>
+      </div>
+      <button type="button" class="nav__hamburger" id="hamburger" aria-label="打开菜单" aria-expanded="false">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero" id="hero">
+    <div class="container">
+      <p class="hero__subtitle">AI 驱动的投资思考伙伴</p>
+      <h1 class="hero__title">知行录</h1>
+      <p class="hero__desc">不做预测，只做分析。帮你看清每一笔交易背后的逻辑。</p>
+      <div class="hero__actions">
+        <a href="#quickstart" class="btn btn--primary">快速开始</a>
+        <a href="https://github.com/firyrice/zhixinglu" target="_blank" rel="noopener" class="btn btn--secondary">GitHub ⭐</a>
+        <a href="https://space.bilibili.com/117762790?spm_id_from=333.788.0.0" target="_blank" rel="noopener" class="btn btn--bilibili">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="vertical-align: -2px; margin-right: 4px;"><path d="M17.813 4.653h.854c1.51.054 2.769.578 3.773 1.574 1.004.995 1.524 2.249 1.56 3.76v7.36c-.036 1.51-.556 2.769-1.56 3.773s-2.262 1.524-3.773 1.56H5.333c-1.51-.036-2.769-.556-3.773-1.56S.036 18.858 0 17.347v-7.36c.036-1.511.556-2.765 1.56-3.76 1.004-.996 2.262-1.52 3.773-1.574h.774l-1.174-1.12a1.234 1.234 0 0 1-.373-.906c0-.356.124-.658.373-.907l.027-.027c.267-.249.573-.373.92-.373.347 0 .653.124.92.373L9.653 4.44c.071.071.134.142.187.213h4.267a.836.836 0 0 1 .16-.213l2.853-2.747c.267-.249.573-.373.92-.373.347 0 .662.151.929.4.267.249.391.551.391.907 0 .355-.124.657-.373.906zM5.333 7.24c-.746.018-1.373.276-1.88.773-.506.498-.769 1.13-.786 1.894v7.52c.017.764.28 1.395.786 1.893.507.498 1.134.756 1.88.773h13.334c.746-.017 1.373-.275 1.88-.773.506-.498.769-1.129.786-1.893v-7.52c-.017-.765-.28-1.396-.786-1.894-.507-.497-1.134-.755-1.88-.773zM8 11.107c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373zm8 0c.373 0 .684.124.933.373.25.249.383.569.4.96v1.173c-.017.391-.15.711-.4.96-.249.25-.56.374-.933.374s-.684-.125-.933-.374c-.25-.249-.383-.569-.4-.96V12.44c.017-.391.15-.711.4-.96.249-.249.56-.373.933-.373z"/></svg>
+          B站关注
+        </a>
+      </div>
+      <div class="hero__screenshot">
+        <img src="images/hero-screenshot.png" alt="知行录产品主界面" class="screenshot-img">
+      </div>
+    </div>
+  </section>
+
+  <!-- Pain Points -->
+  <section class="pain-points" data-animate>
+    <div class="container">
+      <h2 class="section-title">散户投资的三大困境</h2>
+      <div class="pain-points__grid">
+        <div class="pain-card">
+          <div class="pain-card__icon">📊</div>
+          <h3 class="pain-card__title">研究不深</h3>
+          <p class="pain-card__desc">缺乏系统分析框架，看了一堆消息却抓不住重点</p>
+        </div>
+        <div class="pain-card">
+          <div class="pain-card__icon">⏰</div>
+          <h3 class="pain-card__title">盯盘焦虑</h3>
+          <p class="pain-card__desc">没时间持续跟踪持仓，涨了不知道该不该卖，跌了慌</p>
+        </div>
+        <div class="pain-card">
+          <div class="pain-card__icon">🎯</div>
+          <h3 class="pain-card__title">冲动交易</h3>
+          <p class="pain-card__desc">买卖缺乏理性决策依据，事后复盘总是后悔</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature 1: Stock Analysis -->
+  <section class="feature" id="features" data-animate>
+    <div class="container">
+      <div class="feature__grid">
+        <div class="feature__text">
+          <span class="feature__label">功能一</span>
+          <h2 class="feature__title">个股深度分析</h2>
+          <p class="feature__desc">输入股票代码，一键生成 10 大维度全方位研报。从基本面到技术面，从估值模型到风险提示，帮你建立系统的分析框架。</p>
+          <ul class="feature__list">
+            <li>10 大分析模块，覆盖财务、估值、技术、行业</li>
+            <li>5 种经典估值模型（DCF、DDM、PEG 等）</li>
+            <li>实时数据 + AI 深度解读，不是简单的数据堆砌</li>
+            <li>流式输出，边生成边阅读</li>
+          </ul>
+        </div>
+        <div class="feature__image">
+          <img src="images/feature-analysis.png" alt="个股深度分析报告" class="screenshot-img">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature 2: Portfolio + Letter -->
+  <section class="feature feature--reverse" data-animate>
+    <div class="container">
+      <div class="feature__grid">
+        <div class="feature__text">
+          <span class="feature__label">功能二</span>
+          <h2 class="feature__title">持仓追踪 + 巴菲特来信</h2>
+          <p class="feature__desc">导入你的持仓，每日收到一封 AI 生成的「巴菲特来信」。用价值投资的视角审视你的持仓，给出理性的分析和建议。</p>
+          <ul class="feature__list">
+            <li>券商截图一键导入持仓，VLM 智能识别</li>
+            <li>每日市场温度 + 个股诊断 + 操作建议</li>
+            <li>巴菲特人格化写作，严肃又不失温度</li>
+            <li>历史来信存档，随时回顾</li>
+          </ul>
+        </div>
+        <div class="feature__image">
+          <img src="images/feature-letter.png" alt="巴菲特来信" class="screenshot-img">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature 3: Trade Diagnosis -->
+  <section class="feature" data-animate>
+    <div class="container">
+      <div class="feature__grid">
+        <div class="feature__text">
+          <span class="feature__label">功能三</span>
+          <h2 class="feature__title">交易诊断</h2>
+          <p class="feature__desc">买入还是卖出？先问问 AI。输入你的交易意图，从价值、仓位、时机、市场等 6 个维度给出全面诊断，帮你做出更理性的决策。</p>
+          <ul class="feature__list">
+            <li>6 维度诊断：价值、仓位、时机、市场、结论、风险</li>
+            <li>结合你的持仓全局分析，不是孤立看单只股票</li>
+            <li>支持追问对话，深入探讨交易逻辑</li>
+            <li>历史诊断存档，复盘交易决策</li>
+          </ul>
+        </div>
+        <div class="feature__image">
+          <img src="images/feature-diagnosis.png" alt="交易诊断报告" class="screenshot-img">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section class="quickstart" id="quickstart" data-animate>
+    <div class="container">
+      <h2 class="section-title">3 步开始使用</h2>
+      <div class="quickstart__steps">
+        <div class="step-card">
+          <div class="step-card__number">1</div>
+          <h3 class="step-card__title">克隆仓库</h3>
+          <pre class="step-card__code"><code>git clone https://github.com/firyrice/zhixinglu.git
+cd zhixinglu
+pip install -r requirements.txt</code></pre>
+        </div>
+        <div class="step-card">
+          <div class="step-card__number">2</div>
+          <h3 class="step-card__title">配置环境</h3>
+          <pre class="step-card__code"><code>cp .env.example .env
+# 编辑 .env，填入你的 LLM API Key
+# 支持任何 OpenAI 兼容接口</code></pre>
+        </div>
+        <div class="step-card">
+          <div class="step-card__number">3</div>
+          <h3 class="step-card__title">启动服务</h3>
+          <pre class="step-card__code"><code>python3 run.py
+# 访问 http://localhost:5001</code></pre>
+        </div>
+      </div>
+      <p class="quickstart__note">环境要求：Python 3.8+，需要 LLM API Key（支持 OpenAI、Claude、Gemini 等兼容接口）</p>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__content">
+        <div class="footer__brand">
+          <span class="footer__name">知行录</span>
+          <p class="footer__tagline">记录投资的知与行</p>
+        </div>
+        <div class="footer__links">
+          <a href="https://github.com/firyrice/zhixinglu" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/firyrice/zhixinglu/issues" target="_blank" rel="noopener">问题反馈</a>
+          <a href="https://github.com/firyrice/zhixinglu/pulls" target="_blank" rel="noopener">贡献指南</a>
+        </div>
+        <div class="footer__tech">
+          <span class="tech-tag">Python</span>
+          <span class="tech-tag">FastAPI</span>
+          <span class="tech-tag">akshare</span>
+          <span class="tech-tag">OpenAI SDK</span>
+        </div>
+      </div>
+      <p class="footer__copyright">开源项目 · MIT License</p>
+    </div>
+  </footer>
+
+  <!-- Mobile Menu Overlay -->
+  <div class="mobile-menu" id="mobile-menu">
+    <a href="#features">功能</a>
+    <a href="#quickstart">使用指南</a>
+    <a href="https://github.com/firyrice/zhixinglu" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://space.bilibili.com/117762790?spm_id_from=333.788.0.0" target="_blank" rel="noopener">B站关注</a>
+  </div>
+
+  <script src="js/main.js"></script>
+</body>
+</html>
