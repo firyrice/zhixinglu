@@ -6,19 +6,14 @@ from typing import AsyncGenerator
 from app.data.letter_data import fetch_letter_data
 from app.ai.llm_client import chat, chat_with_search
 from app.ai.letter_prompts import (
-    letter_opening_prompt, letter_module1_prompt, letter_module2_prompt,
-    letter_module3_prompt, letter_module4_prompt, letter_module5_prompt,
-    letter_closing_prompt,
+    letter_opening_prompt, letter_stocks_prompt, letter_news_prompt,
+    letter_market_prompt, letter_closing_prompt,
 )
 from app.report.letter_template import (
-    letter_html_head, letter_opening_html, letter_module_html,
-    letter_data_cards_html, letter_closing_html, letter_html_footer,
+    letter_html_head, letter_opening_html, letter_data_cards_html,
+    letter_stocks_html, letter_news_html, letter_market_html,
+    letter_closing_html, letter_html_footer,
 )
-
-
-def _md(text: str) -> str:
-    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    return f'<div class="md-text letter-md">{escaped}</div>'
 
 
 def _calc_portfolio_summary(holdings: list[dict], quotes: dict) -> dict:
@@ -104,19 +99,38 @@ def _build_market_str(market):
     return "\n".join(lines) if lines else "市场数据暂不可用"
 
 
-def _build_risk_str(holdings, quotes, summary):
-    lines = []
-    total = summary["total_asset"]
-    sorted_h = sorted(holdings, key=lambda h: quotes.get(h["code"], {}).get("price", 0) * h["shares"], reverse=True)
-    if total > 0:
-        for h in sorted_h:
-            mv = quotes.get(h["code"], {}).get("price", 0) * h["shares"]
-            pct = mv / total * 100
-            pnl_pct = ((quotes.get(h["code"], {}).get("price", 0) - h["cost_price"]) / h["cost_price"] * 100) if h["cost_price"] > 0 else 0
-            lines.append(f"{h['name']}: 仓位{pct:.1f}%, 盈亏{pnl_pct:+.1f}%")
-        top3_pct = sum(quotes.get(h["code"], {}).get("price", 0) * h["shares"] / total * 100 for h in sorted_h[:3])
-        lines.append(f"前3大持仓占比: {top3_pct:.1f}%")
-    return "\n".join(lines) if lines else "持仓数据不足"
+def _parse_json(text: str):
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:] if lines[0].startswith("```") else lines
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip() == "```":
+                lines = lines[:i]
+                break
+        text = "\n".join(lines)
+    return json.loads(text)
+
+
+# PLACEHOLDER_GENERATOR_PART3
+
+
+def _enrich_stocks_with_data(stocks_json: list[dict], holdings, quotes) -> list[dict]:
+    """Fill in change_pct from real data if LLM got it wrong."""
+    code_map = {}
+    for h in holdings:
+        q = quotes.get(h["code"], {})
+        price = q.get("price", 0)
+        prev = q.get("prev_close", price)
+        change = ((price - prev) / prev * 100) if prev > 0 else 0
+        code_map[h["code"]] = change
+        code_map[h["name"]] = change
+
+    for s in stocks_json:
+        real_change = code_map.get(s.get("code")) or code_map.get(s.get("name"))
+        if real_change is not None:
+            s["change_pct"] = round(real_change, 2)
+    return stocks_json
 
 
 async def generate_letter(holdings: list[dict]) -> AsyncGenerator[str, None]:
@@ -140,56 +154,80 @@ async def generate_letter(holdings: list[dict]) -> AsyncGenerator[str, None]:
     hs300_chg = float(hs300.get("涨跌幅", 0) or 0)
     vs_hs300 = summary["daily_pct"] - hs300_chg
 
-    portfolio_str = f"今日盈亏: {summary['daily_pnl']:+,.0f} ({summary['daily_pct']:+.2f}%), 总资产: {summary['total_asset']:,.0f}, 持仓盈亏: {summary['total_pnl_pct']:+.2f}%, 跑赢沪深300: {vs_hs300:+.1f}%"
+    portfolio_str = (
+        f"今日盈亏: {summary['daily_pnl']:+,.0f} ({summary['daily_pct']:+.2f}%), "
+        f"总资产: {summary['total_asset']:,.0f}, "
+        f"持仓盈亏: {summary['total_pnl_pct']:+.2f}%, "
+        f"跑赢沪深300: {vs_hs300:+.1f}%"
+    )
     market_str = _build_market_str(market)
 
+    # Opening
     try:
         opening = await asyncio.to_thread(chat, letter_opening_prompt(portfolio_str, market_str))
     except Exception:
         opening = "今天的市场又给了我们一些值得思考的信号。让我们一起来看看。"
     yield letter_opening_html(opening)
 
-    yield letter_data_cards_html(summary["daily_pnl"], summary["daily_pct"],
-                                  summary["total_asset"], summary["total_pnl_pct"], vs_hs300)
+    # Data cards
+    yield letter_data_cards_html(
+        summary["daily_pnl"], summary["daily_pct"],
+        summary["total_asset"], summary["total_pnl_pct"], vs_hs300
+    )
 
+    # Section 1: Stock analysis cards
     stock_details_str = _build_stock_details_str(holdings, quotes, details)
     try:
-        m1 = await asyncio.to_thread(chat, letter_module1_prompt(portfolio_str, stock_details_str))
+        raw = await asyncio.to_thread(
+            chat, letter_stocks_prompt(portfolio_str, stock_details_str, market_str)
+        )
+        stocks_json = _parse_json(raw)
+        stocks_json = _enrich_stocks_with_data(stocks_json, holdings, quotes)
     except Exception:
-        m1 = "个股点评暂时无法生成。"
-    yield letter_module_html(1, "今日持仓全景", _md(m1))
+        stocks_json = []
+        for h in holdings:
+            q = quotes.get(h["code"], {})
+            price = q.get("price", 0)
+            prev = q.get("prev_close", price)
+            change = ((price - prev) / prev * 100) if prev > 0 else 0
+            stocks_json.append({
+                "name": h["name"], "code": h["code"],
+                "change_pct": round(change, 2),
+                "reason": "分析暂时无法生成", "signals": [],
+                "action": "持有", "action_score": 3, "risk": "",
+            })
+    yield letter_stocks_html(stocks_json)
 
+    # Section 2: News
     news_str = _build_news_str(holdings, news)
     holdings_str = ", ".join(f"{h['name']}({h['code']})" for h in holdings)
     try:
-        m2 = await asyncio.to_thread(chat_with_search, letter_module2_prompt(holdings_str, news_str))
+        raw = await asyncio.to_thread(
+            chat_with_search, letter_news_prompt(holdings_str, news_str)
+        )
+        news_json = _parse_json(raw)
     except Exception:
-        m2 = "热点情报暂时无法生成。"
-    yield letter_module_html(2, "精选热点情报", _md(m2))
+        news_json = []
+    yield letter_news_html(news_json)
 
+    # Section 3: Market temperature
     try:
-        m3 = await asyncio.to_thread(chat_with_search, letter_module3_prompt(market_str, holdings_str))
+        raw = await asyncio.to_thread(
+            chat_with_search, letter_market_prompt(market_str, portfolio_str)
+        )
+        market_json = _parse_json(raw)
     except Exception:
-        m3 = "市场研判暂时无法生成。"
-    yield letter_module_html(3, "市场大势研判", _md(m3))
+        market_json = {
+            "sentiment_score": 50, "sentiment_label": "中性",
+            "summary": "市场数据暂不可用", "north_flow": "-",
+            "hot_sectors": "-", "risk_sectors": "-",
+        }
+    yield letter_market_html(market_json)
 
-    risk_str = _build_risk_str(holdings, quotes, summary)
-    try:
-        m4 = await asyncio.to_thread(chat, letter_module4_prompt(risk_str))
-    except Exception:
-        m4 = "风险体检暂时无法生成。"
-    yield letter_module_html(4, "组合风险体检", _md(m4))
-
-    full_context = f"组合概况:\n{portfolio_str}\n\n个股详情:\n{stock_details_str}\n\n市场环境:\n{market_str}\n\n风险分析:\n{risk_str}"
-    try:
-        m5 = await asyncio.to_thread(chat, letter_module5_prompt(full_context))
-    except Exception:
-        m5 = "策略建议暂时无法生成。"
-    yield letter_module_html(5, "策略建议", _md(m5))
-
+    # Closing
     try:
         closing = await asyncio.to_thread(chat, letter_closing_prompt(portfolio_str))
     except Exception:
-        closing = "记住，市场先生是来服务你的，不是来指导你的。保持耐心，我们的目标是长期复利。明天见。"
+        closing = "记住，市场先生是来服务你的，不是来指导你的。明天见。"
     yield letter_closing_html(closing)
     yield letter_html_footer()

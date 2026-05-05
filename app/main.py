@@ -20,6 +20,13 @@ from app.models.letter import (
     get_latest_letter, mark_read, delete_letter,
 )
 from app.report.letter_generator import generate_letter
+from app.models.diagnosis import (
+    init_diagnosis_db, save_diagnosis, list_diagnoses, get_diagnosis,
+    update_chat_history, delete_diagnosis,
+)
+from app.report.diagnosis_generator import generate_diagnosis
+from app.ai.llm_client import chat as llm_chat
+from app.ai.diagnosis_prompts import chat_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +35,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     init_db()
     init_letter_db()
+    init_diagnosis_db()
     yield
 
 
@@ -255,4 +263,128 @@ async def api_letter_delete(letter_id: int):
     deleted = await asyncio.to_thread(delete_letter, letter_id)
     if not deleted:
         return JSONResponse({"error": "来信不存在"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+# ── Diagnosis endpoints ──
+
+
+@app.post("/api/diagnosis/generate")
+async def api_diagnosis_generate(request: Request):
+    body = await request.json()
+    trade_intent = body.get("trade_intent", {})
+    holdings = body.get("holdings", [])
+
+    if not trade_intent.get("code") or not trade_intent.get("name"):
+        return JSONResponse({"error": "请选择股票"}, status_code=400)
+    if not trade_intent.get("shares"):
+        return JSONResponse({"error": "请输入交易数量"}, status_code=400)
+
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    snapshot = json.dumps(holdings, ensure_ascii=False)
+
+    async def stream():
+        chunks = []
+        async for chunk in generate_diagnosis(trade_intent, holdings):
+            chunks.append(chunk)
+            yield chunk
+        full_html = "".join(chunks)
+
+        summary = ""
+        m = re.search(r'class="diag-conclusion-text">(.*?)</div>', full_html, re.DOTALL)
+        if m:
+            summary = m.group(1).strip()[:200]
+
+        try:
+            save_diagnosis(
+                date_str, trade_intent["code"], trade_intent["name"],
+                trade_intent.get("direction", "buy"),
+                trade_intent.get("shares", 0),
+                trade_intent.get("target_price"),
+                trade_intent.get("reason"),
+                full_html, summary, snapshot,
+            )
+        except Exception:
+            logger.exception("Failed to save diagnosis")
+
+    return StreamingResponse(stream(), media_type="text/html; charset=utf-8")
+
+
+@app.post("/api/diagnosis/chat")
+async def api_diagnosis_chat(request: Request):
+    body = await request.json()
+    diagnosis_id = body.get("diagnosis_id")
+    message = body.get("message", "")
+    history = body.get("history", [])
+
+    if not message:
+        return JSONResponse({"error": "请输入问题"}, status_code=400)
+
+    diagnosis_record = None
+    if diagnosis_id:
+        diagnosis_record = await asyncio.to_thread(get_diagnosis, diagnosis_id)
+
+    diagnosis_summary = ""
+    if diagnosis_record:
+        m = re.search(r'class="diag-conclusion-text">(.*?)</div>', diagnosis_record.get("content", ""), re.DOTALL)
+        if m:
+            diagnosis_summary = m.group(1).strip()
+
+    system = chat_system_prompt(
+        diagnosis_summary or "暂无诊断摘要",
+        diagnosis_record.get("holdings_snapshot", "[]") if diagnosis_record else "[]",
+        "请基于公开信息回答",
+    )
+
+    messages = [{"role": "system", "content": system}]
+    for h in history[-10:]:
+        messages.append({"role": h.get("role", "user"), "content": h.get("content", "")})
+    messages.append({"role": "user", "content": message})
+
+    async def stream():
+        full_text = await asyncio.to_thread(llm_chat, messages)
+        yield full_text
+
+        if diagnosis_id:
+            new_history = history + [
+                {"role": "user", "content": message},
+                {"role": "assistant", "content": full_text},
+            ]
+            try:
+                await asyncio.to_thread(
+                    update_chat_history, diagnosis_id, json.dumps(new_history, ensure_ascii=False)
+                )
+            except Exception:
+                pass
+
+    return StreamingResponse(stream(), media_type="text/plain; charset=utf-8")
+
+
+@app.get("/api/diagnosis/history")
+async def api_diagnosis_history():
+    records = await asyncio.to_thread(list_diagnoses)
+    return JSONResponse(records)
+
+
+@app.get("/api/diagnosis/{diagnosis_id}")
+async def api_diagnosis_detail(diagnosis_id: int):
+    record = await asyncio.to_thread(get_diagnosis, diagnosis_id)
+    if not record:
+        return JSONResponse({"error": "诊断记录不存在"}, status_code=404)
+    return JSONResponse({
+        "id": record["id"], "date": record["date"],
+        "stock_code": record["stock_code"], "stock_name": record["stock_name"],
+        "direction": record["direction"], "shares": record["shares"],
+        "target_price": record["target_price"], "reason": record["reason"],
+        "content": record["content"], "summary": record["summary"],
+        "chat_history": record["chat_history"],
+        "created_at": record["created_at"],
+    })
+
+
+@app.delete("/api/diagnosis/{diagnosis_id}")
+async def api_diagnosis_delete(diagnosis_id: int):
+    deleted = await asyncio.to_thread(delete_diagnosis, diagnosis_id)
+    if not deleted:
+        return JSONResponse({"error": "诊断记录不存在"}, status_code=404)
     return JSONResponse({"ok": True})

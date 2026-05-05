@@ -208,6 +208,7 @@ const Portfolio = {
           <div class="detail-actions">
             <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();AddStock.showEdit('${s.code}')">修改持仓</button>
             <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();window.location.href='/api/report/${s.code}'">查看深度分析 →</button>
+            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();Router.navigate('/diagnosis?code=${s.code}&name=${encodeURIComponent(s.name)}&market=${s.market||'A'}')">诊断交易</button>
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();AddStock.showDelete('${s.code}')" style="margin-left:auto;">移除</button>
           </div>
         </div>

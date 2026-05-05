@@ -6,6 +6,7 @@
 <title>知行录</title>
 <link rel="stylesheet" href="/static/css/common.css">
 <link rel="stylesheet" href="/static/css/portfolio.css">
+<link rel="stylesheet" href="/static/css/diagnosis.css">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Noto+Sans+SC:wght@300;400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -21,6 +22,7 @@
 <script src="/static/js/charts.js"></script>
 <script src="/static/js/letter.js"></script>
 <script src="/static/js/mailbox.js"></script>
+<script src="/static/js/diagnosis.js"></script>
 <script>
 function renderHome() {
   const app = document.getElementById('app');
@@ -86,6 +88,13 @@ function renderHome() {
           </div>
         </div>
         ${entryCard}
+        <div class="portfolio-entry-card card" onclick="Router.navigate('/diagnosis')" style="margin-top:12px;">
+          <div class="entry-header">
+            <span class="entry-title">交易诊断</span>
+            <span class="entry-arrow">&rarr;</span>
+          </div>
+          <p class="text-secondary text-sm" style="margin-top:4px;">交易前听听第二意见，让AI帮你做系统性检查</p>
+        </div>
       </div>
     </div>`;
 
@@ -260,6 +269,14 @@ Router.register('/letter', () => {
   Letter.render(id);
 });
 Router.register('/mailbox', () => Mailbox.render());
+Router.register('/diagnosis', () => {
+  const hash = window.location.hash;
+  const path = hash.replace('#/diagnosis', '');
+  if (path === '/history') { Diagnosis.renderHistory(); }
+  else if (path === '/generate') { Diagnosis.renderGenerating(); }
+  else if (path && path.startsWith('/') && path.length > 1) { Diagnosis.renderDetail(path.slice(1)); }
+  else { Diagnosis.renderForm(); }
+});
 Router.start();
 </script>
 </body>
